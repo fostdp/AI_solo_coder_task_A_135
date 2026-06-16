@@ -1,40 +1,55 @@
 import axios from 'axios';
 import type { SensorData, SimulationParams, SimulationStatus, AlertRecord, WindowSolution } from '@/types';
 
-const api = axios.create({
-  baseURL: '/api',
+const dtuReceiverAPI = axios.create({
+  baseURL: '/dtu/api',
+  timeout: 60000,
+});
+
+const daylightSimulatorAPI = axios.create({
+  baseURL: '/daylight/api',
+  timeout: 60000,
+});
+
+const sunlightOptimizerAPI = axios.create({
+  baseURL: '/sunlight/api',
+  timeout: 60000,
+});
+
+const alarmMqttAPI = axios.create({
+  baseURL: '/alarm/api',
   timeout: 60000,
 });
 
 export const sensorAPI = {
   getLatest: (hall_id: string = 'han_changan_mingtang') =>
-    api.get<SensorData[]>(`/sensor/latest`, { params: { hall_id } }),
+    dtuReceiverAPI.get<SensorData[]>(`/sensor/latest`, { params: { hall_id } }),
 
   getData: (params: { hall_id?: string; start_time?: string; end_time?: string; location?: string; limit?: number }) =>
-    api.get<SensorData[]>('/sensor/data', { params }),
+    dtuReceiverAPI.get<SensorData[]>('/sensor/data', { params }),
 
   getStatistics: (params: { hall_id?: string; start_time?: string; end_time?: string }) =>
-    api.get('/sensor/statistics', { params }),
+    dtuReceiverAPI.get('/sensor/statistics', { params }),
 
   getSunshineHours: (params: { hall_id?: string; date?: string; threshold?: number }) =>
-    api.get('/sensor/sunshine-hours', { params }),
+    dtuReceiverAPI.get('/sensor/sunshine-hours', { params }),
 };
 
 export const simulationAPI = {
   run: (params: SimulationParams) =>
-    api.post<SimulationStatus>('/simulation/run', params),
+    daylightSimulatorAPI.post<SimulationStatus>('/simulation/run', params),
 
   getStatus: (task_id: string) =>
-    api.get<SimulationStatus>(`/simulation/status/${task_id}`),
+    daylightSimulatorAPI.get<SimulationStatus>(`/simulation/status/${task_id}`),
 
   getTasks: () =>
-    api.get<SimulationStatus[]>('/simulation/tasks'),
+    daylightSimulatorAPI.get<SimulationStatus[]>('/simulation/tasks'),
 
   getResult: (task_id: string) =>
-    api.get<SimulationStatus>(`/simulation/result/${task_id}`),
+    daylightSimulatorAPI.get<SimulationStatus>(`/simulation/result/${task_id}`),
 
   cancel: (task_id: string) =>
-    api.post(`/simulation/cancel/${task_id}`),
+    daylightSimulatorAPI.post(`/simulation/cancel/${task_id}`),
 };
 
 export const optimizationAPI = {
@@ -48,10 +63,10 @@ export const optimizationAPI = {
     end_hour?: number;
     target_uniformity?: number;
   }) =>
-    api.post<{ task_id: string; status: string }>('/optimization/run', params),
+    sunlightOptimizerAPI.post<{ task_id: string; status: string }>('/optimization/run', params),
 
   getStatus: (task_id: string) =>
-    api.get<{
+    sunlightOptimizerAPI.get<{
       task_id: string;
       status: string;
       progress: number;
@@ -67,24 +82,24 @@ export const optimizationAPI = {
     }>(`/optimization/status/${task_id}`),
 
   getTasks: () =>
-    api.get('/optimization/tasks'),
+    sunlightOptimizerAPI.get('/optimization/tasks'),
 
   getResult: (task_id: string) =>
-    api.get(`/optimization/result/${task_id}`),
+    sunlightOptimizerAPI.get(`/optimization/result/${task_id}`),
 
   compare: (original_windows?: WindowSolution[], optimized_windows?: WindowSolution[]) =>
-    api.post('/optimization/compare', { original_windows, optimized_windows }),
+    sunlightOptimizerAPI.post('/optimization/compare', { original_windows, optimized_windows }),
 };
 
 export const alertAPI = {
   check: (hall_id: string = 'han_changan_mingtang') =>
-    api.post('/alert/check', null, { params: { hall_id } }),
+    alarmMqttAPI.post('/alert/check', null, { params: { hall_id } }),
 
   getHistory: (params?: { hall_id?: string; start_time?: string; end_time?: string; limit?: number }) =>
-    api.get<AlertRecord[]>('/alert/history', { params }),
+    alarmMqttAPI.get<AlertRecord[]>('/alert/history', { params }),
 
   sendTest: (hall_id: string = 'han_changan_mingtang') =>
-    api.post('/alert/test', null, { params: { hall_id } }),
+    alarmMqttAPI.post('/alert/test', null, { params: { hall_id } }),
 };
 
-export default api;
+export { dtuReceiverAPI, daylightSimulatorAPI, sunlightOptimizerAPI, alarmMqttAPI };

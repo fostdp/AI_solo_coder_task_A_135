@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import { alertAPI } from '@/api';
-import Mingtang3DModel from './components/Mingtang3DModel';
-import LightCloudMap from './components/LightCloudMap';
-import ControlPanel from './components/ControlPanel';
-import SensorPanel from './components/SensorPanel';
-import AlertNotification from './components/AlertNotification';
+import { Mingtang3DModel } from './modules/mingtang_3d';
+import { LightCloudMap, ControlPanel, SensorPanel, AlertNotification } from './modules/daylight_panel';
 
 const App: React.FC = () => {
   const { simulationResult, latestSensorData, optimizedWindows, selectedHour, selectedDate } = useAppStore();

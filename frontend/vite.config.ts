@@ -12,6 +12,22 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      '/dtu/api': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
+      '/daylight/api': {
+        target: 'http://localhost:8002',
+        changeOrigin: true,
+      },
+      '/sunlight/api': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+      },
+      '/alarm/api': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
