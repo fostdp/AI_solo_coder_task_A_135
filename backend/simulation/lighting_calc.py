@@ -229,7 +229,7 @@ class LightingCalculator:
                 np.cos(np.radians(self.latitude)) * np.cos(np.radians(declination)) * np.cos(np.radians(hour_angle))
             ))
             cos_azimuth = (np.sin(np.radians(declination)) * np.cos(np.radians(self.latitude)) -
-                           np.cos(np.radians(declination)) * np.sin(np.radians(self.latitude)) * np.cos(np.radians(hour_angle))) / np.cos(np.radians(altitude)))
+                           np.cos(np.radians(declination)) * np.sin(np.radians(self.latitude)) * np.cos(np.radians(hour_angle))) / np.cos(np.radians(altitude))
             azimuth = np.degrees(np.arccos(np.clip(cos_azimuth, -1, 1)))
             if hour_angle > 0:
                 azimuth = 360 - azimuth

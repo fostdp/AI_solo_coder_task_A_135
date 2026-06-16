@@ -86,24 +86,101 @@ class CIEClearSky(SkyModel):
 
 
 class CIEOvercastSky(SkyModel):
-    def __init__(self, params: SkyModelParameters):
+    def __init__(self, params: SkyModelParameters, cloud_cover: float = 1.0):
         super().__init__(params)
+        self.cloud_cover = max(0.0, min(1.0, cloud_cover))
+        self.zs = np.radians(90 - params.solar_altitude)
+        self._validate_sky_luminance()
 
     def get_sky_luminance(self, theta: float, phi: float) -> float:
         theta_rad = np.radians(theta)
+        cos_theta = np.cos(theta_rad)
         zenith_luminance = self._get_zenith_luminance()
-        return zenith_luminance * (1 + 2 * np.cos(theta_rad)) / 3
+        return zenith_luminance * (1.0 + 2.0 * cos_theta) / 3.0
 
     def _get_zenith_luminance(self) -> float:
-        solar_alt = max(0, self.params.solar_altitude)
-        return 200 + 800 * np.sin(np.radians(solar_alt))
+        solar_alt = max(0.0, self.params.solar_altitude)
+        solar_alt_rad = np.radians(solar_alt)
+        T = self.params.turbidity
+
+        clear_zenith = (
+            (4.0453 * T - 4.9710) * np.tan((4/9 - T/120) * (np.pi - 2 * self.zs)) -
+            0.2155 * T + 2.4192
+        )
+        clear_zenith = max(0.0, clear_zenith * 1000.0)
+
+        cloud_zenith = 800.0 + 4000.0 * np.sin(solar_alt_rad)
+        cloud_zenith *= (0.5 + 0.5 * self.cloud_cover)
+
+        cc = self.cloud_cover
+        zenith_luminance = (1 - cc) * clear_zenith + cc * cloud_zenith
+
+        return max(50.0, zenith_luminance)
+
+    def _validate_sky_luminance(self):
+        total_flux = 0.0
+        n_samples = 50
+        for i in range(n_samples):
+            theta = (i + 0.5) * 90.0 / n_samples
+            theta_rad = np.radians(theta)
+            domega = 2 * np.pi * np.sin(theta_rad) * np.radians(90.0 / n_samples)
+            Lv = self.get_sky_luminance(theta, 0)
+            total_flux += Lv * np.cos(theta_rad) * domega
+
+        self._computed_diffuse = total_flux
 
     def get_direct_irradiance(self) -> float:
-        return 0
+        if self.params.solar_altitude <= 0:
+            return 0.0
+
+        zs_deg = 90.0 - self.params.solar_altitude
+        if zs_deg >= 90:
+            return 0.0
+
+        m = 1.0 / (np.cos(np.radians(zs_deg)) + 0.50572 * (96.07995 - zs_deg) ** (-1.6364))
+        I0 = 1367.0
+        k = 0.2709 * self.params.turbidity - 0.2909
+
+        direct_normal = I0 * np.exp(-k * m)
+        direct_horizontal = direct_normal * np.cos(np.radians(zs_deg))
+
+        attenuation = 1.0 - 0.95 * self.cloud_cover ** 2.0
+        return max(0.0, direct_horizontal * attenuation)
 
     def get_diffuse_irradiance(self) -> float:
-        solar_alt = max(0, self.params.solar_altitude)
-        return 150 + 300 * np.sin(np.radians(solar_alt))
+        if self.params.solar_altitude <= 0:
+            return 0.0
+
+        solar_alt_rad = np.radians(max(0.0, self.params.solar_altitude))
+        sin_alt = np.sin(solar_alt_rad)
+
+        clear_diffuse = self._computed_diffuse * 0.005
+        clear_diffuse = max(50.0, clear_diffuse * sin_alt)
+
+        cloud_factor = 0.3 + 0.7 * self.cloud_cover
+        zenith_Lz = self._get_zenith_luminance()
+        cloud_diffuse = np.pi * zenith_Lz * (2.0 / 3.0) * sin_alt * 0.005
+
+        cc = self.cloud_cover
+        diffuse_horiz = (1 - cc) * clear_diffuse + cc * cloud_diffuse
+
+        direct = self.get_direct_irradiance()
+        if direct > 0:
+            isotropic_part = 0.5 * diffuse_horiz
+            circumsolar_part = 0.5 * diffuse_horiz * np.exp(-0.5 / max(sin_alt, 0.01))
+            diffuse_horiz = isotropic_part + circumsolar_part
+
+        ground_reflected = direct * self.params.ground_albedo * 0.1
+        diffuse_horiz += ground_reflected
+
+        return max(100.0, diffuse_horiz)
+
+    def get_cloud_cover(self) -> float:
+        return self.cloud_cover
+
+    def set_cloud_cover(self, cloud_cover: float):
+        self.cloud_cover = max(0.0, min(1.0, cloud_cover))
+        self._validate_sky_luminance()
 
 
 class PerezSkyModel(SkyModel):
@@ -197,15 +274,21 @@ class PerezSkyModel(SkyModel):
         return max(0, direct * diffuse_ratio + 50 * np.sin(altitude_rad))
 
 
-def create_sky_model(model_type: str, params: SkyModelParameters) -> SkyModel:
+def create_sky_model(
+    model_type: str,
+    params: SkyModelParameters,
+    cloud_cover: float = 0.0
+) -> SkyModel:
+    if model_type == 'cie_overcast':
+        return CIEOvercastSky(params, cloud_cover=cloud_cover)
+
     models = {
         'perez': PerezSkyModel,
         'cie_clear': CIEClearSky,
-        'cie_overcast': CIEOvercastSky
     }
 
     if model_type not in models:
         raise ValueError(f"Unknown sky model type: {model_type}. "
-                         f"Available types: {list(models.keys())}")
+                         f"Available types: {list(models.keys()) + ['cie_overcast']}")
 
     return models[model_type](params)
