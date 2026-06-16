@@ -32,16 +32,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir /wheels/* && \
     rm -rf /wheels
 
-COPY shared/ /app/shared/
+COPY scripts/sensor_simulator.py /app/sensor_simulator.py
 COPY config/ /app/config/
-COPY dtu_receiver/ /app/dtu_receiver/
 
-EXPOSE 8001
+RUN chmod +x /app/sensor_simulator.py
 
-CMD ["gunicorn", "dtu_receiver.main:app", \
-     "-w", "4", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "-b", "0.0.0.0:8001", \
-     "--timeout", "120", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+ENTRYPOINT ["python", "/app/sensor_simulator.py"]
+CMD ["--mode", "continuous"]

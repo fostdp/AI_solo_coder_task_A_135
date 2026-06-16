@@ -15,7 +15,32 @@ services:
       - DOCKER_INFLUXDB_INIT_ORG=architecture_research
       - DOCKER_INFLUXDB_INIT_BUCKET=mingtang_data
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mingtang-secret-token
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
+
+  influxdb_init:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.dtu_receiver
+    container_name: mingtang-influxdb-init
+    command: python /app/scripts/init_influxdb.py
+    volumes:
+      - ./backend/scripts:/app/scripts:ro
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=mingtang-secret-token
+      - INFLUXDB_ORG=architecture_research
+      - INFLUXDB_BUCKET=mingtang_data
+      - INFLUXDB_BUCKET_HOURLY=mingtang_data_hourly
+      - INFLUXDB_BUCKET_DAILY=mingtang_data_daily
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -24,6 +49,11 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   mosquitto:
@@ -33,9 +63,14 @@ services:
       - "1883:1883"
       - "9001:9001"
     volumes:
-      - mosquitto-config:/mosquitto/config
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -W 3 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   dtu_receiver:
@@ -54,8 +89,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - influxdb
-      - redis
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8001/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
   daylight_simulator:
@@ -76,8 +118,15 @@ services:
       - LATITUDE=34.2658
       - LONGITUDE=108.9541
     depends_on:
-      - influxdb
-      - redis
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8002/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
   sunlight_optimizer:
@@ -98,8 +147,15 @@ services:
       - LATITUDE=34.2658
       - LONGITUDE=108.9541
     depends_on:
-      - influxdb
-      - redis
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8003/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
   alarm_mqtt:
@@ -123,9 +179,51 @@ services:
       - LATITUDE=34.2658
       - LONGITUDE=108.9541
     depends_on:
-      - influxdb
-      - redis
-      - mosquitto
+      influxdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8004/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  sensor_simulator:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.sensor_simulator
+    container_name: mingtang-sensor-simulator
+    volumes:
+      - ./backend/config:/app/config:ro
+      - ./backend/scripts:/app/scripts:ro
+    environment:
+      - SIMULATOR_MODE=continuous
+      - SIMULATOR_SEASON=
+      - SIMULATOR_API_URL=http://dtu_receiver:8001
+      - SIMULATOR_HALL_ID=han_changan_mingtang
+      - SIMULATOR_LATITUDE=34.2658
+      - SIMULATOR_LONGITUDE=108.9541
+      - SIMULATOR_INTERVAL=3600
+    depends_on:
+      dtu_receiver:
+        condition: service_healthy
+    profiles:
+      - simulator
+    command: >
+      sh -c "
+        python /app/sensor_simulator.py
+        --mode $${SIMULATOR_MODE}
+        --api-url $${SIMULATOR_API_URL}
+        --hall-id $${SIMULATOR_HALL_ID}
+        --latitude $${SIMULATOR_LATITUDE}
+        --longitude $${SIMULATOR_LONGITUDE}
+        --interval $${SIMULATOR_INTERVAL}
+        $${SIMULATOR_SEASON:+--season $$SIMULATOR_SEASON}
+      "
     restart: unless-stopped
 
   frontend:
@@ -136,15 +234,23 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - dtu_receiver
-      - daylight_simulator
-      - sunlight_optimizer
-      - alarm_mqtt
+      dtu_receiver:
+        condition: service_healthy
+      daylight_simulator:
+        condition: service_healthy
+      sunlight_optimizer:
+        condition: service_healthy
+      alarm_mqtt:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:
   influxdb-data:
   redis-data:
-  mosquitto-config:
   mosquitto-data:
   mosquitto-log:
